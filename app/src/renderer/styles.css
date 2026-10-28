@@ -1,0 +1,285 @@
+@import "tailwindcss";
+@theme {
+  --color-*: initial;
+}
+@import "../../../replica/design/tokens.css";
+@import "../../../replica/design/tailwind.css";
+@import "katex/dist/katex.min.css";
+
+@source "./";
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    font-family: var(--tk-font-sans);
+    font-size: var(--tk-text-sm);
+    line-height: var(--tk-text-sm--line-height);
+    color: var(--tk-color-text);
+    background: transparent;
+    -webkit-font-smoothing: antialiased;
+  }
+  body.solid-page {
+    background: var(--tk-color-bg);
+  }
+  :focus-visible {
+    outline: 2px solid var(--tk-color-focus);
+    outline-offset: 2px;
+  }
+  .glass :focus-visible,
+  .on-glass:focus-visible {
+    outline-color: var(--tk-glass-accent);
+  }
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: var(--tk-opacity-disabled);
+  }
+  ::selection {
+    background: var(--tk-color-surface-2);
+  }
+}
+
+/* Electron frameless window: drag regions. Every control inside sets no-drag. */
+.drag {
+  -webkit-app-region: drag;
+}
+.drag button,
+.drag input,
+.drag a,
+.drag [role="button"],
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
+@keyframes shake {
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+@keyframes pulse-dot {
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes shimmer {
+  50% {
+    opacity: 0.55;
+  }
+}
+@keyframes countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.anim-spin {
+  animation: spin 0.8s linear infinite;
+}
+.anim-rise {
+  animation: rise var(--tk-motion-base) var(--tk-motion-ease);
+}
+.anim-fade {
+  animation: fade var(--tk-motion-fast) var(--tk-motion-ease);
+}
+.anim-shake {
+  animation: shake var(--tk-motion-fast) 2;
+}
+.anim-pulse {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+.anim-skeleton {
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+.caret::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: blink 1s steps(1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .anim-spin {
+    animation-duration: 1.5s;
+  }
+  .anim-rise,
+  .anim-fade,
+  .anim-shake,
+  .anim-pulse,
+  .anim-skeleton,
+  .caret::after {
+    animation: none;
+  }
+}
+
+/* Older transcript words fade out on the left of the live strip. */
+.fade-left {
+  mask-image: linear-gradient(to right, transparent, black 15%);
+}
+
+/* Markdown bodies (answer card, preview, notes, resume viewer). */
+.md {
+  overflow-wrap: anywhere;
+}
+.md > * + * {
+  margin-top: var(--tk-space-4);
+}
+.md ul,
+.md ol {
+  padding-left: var(--tk-space-6);
+}
+.md ul {
+  list-style: disc;
+}
+.md ol {
+  list-style: decimal;
+}
+.md li + li {
+  margin-top: var(--tk-space-2);
+}
+.md strong {
+  font-weight: 600;
+}
+.md a {
+  text-decoration: underline;
+}
+.md h1 {
+  font-size: var(--tk-text-lg);
+  line-height: var(--tk-text-lg--line-height);
+  font-weight: 600;
+}
+.md h2 {
+  font-size: var(--tk-text-md);
+  line-height: var(--tk-text-md--line-height);
+  font-weight: 600;
+  margin-top: var(--tk-space-7);
+}
+.md h3 {
+  font-size: var(--tk-text-base);
+  line-height: var(--tk-text-base--line-height);
+  font-weight: 600;
+  margin-top: var(--tk-space-6);
+}
+.md blockquote {
+  border-left: 2px solid var(--tk-color-border);
+  padding-left: var(--tk-space-5);
+  color: var(--tk-color-text-muted);
+}
+.md :not(pre) > code {
+  font-family: var(--tk-font-mono);
+  font-size: var(--tk-text-xs);
+  padding: 0 var(--tk-space-2);
+  border-radius: var(--tk-radius-xs);
+  background: var(--tk-color-surface-2);
+}
+.glass .md :not(pre) > code {
+  background: var(--tk-glass-kbd);
+  color: var(--tk-glass-on-kbd);
+}
+.glass .md blockquote {
+  border-color: var(--tk-glass-border);
+  color: var(--tk-glass-text-muted);
+}
+.md .katex {
+  font-size: 1em;
+}
+
+/* Shiki css-variables theme, fed from the glass-code tokens. */
+.code-block {
+  --shiki-foreground: var(--tk-glass-code-text);
+  --shiki-background: var(--tk-glass-code-bg);
+  --shiki-token-constant: var(--tk-glass-code-number);
+  --shiki-token-string: var(--tk-glass-code-string);
+  --shiki-token-string-expression: var(--tk-glass-code-string);
+  --shiki-token-comment: var(--tk-glass-code-comment);
+  --shiki-token-keyword: var(--tk-glass-code-keyword);
+  --shiki-token-parameter: var(--tk-glass-code-text);
+  --shiki-token-function: var(--tk-glass-code-function);
+  --shiki-token-punctuation: var(--tk-glass-code-text);
+  --shiki-token-link: var(--tk-glass-code-string);
+}
+.code-block pre {
+  margin: 0;
+  background: transparent !important;
+  font-family: var(--tk-font-mono);
+  font-size: var(--tk-text-code);
+  line-height: var(--tk-text-code--line-height);
+}
+
+/* Resizer handle on the answer panel. */
+.resize-handle {
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+/* Thin scrollbars on glass and panels. */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--tk-color-border-input) transparent;
+}
+.glass .scroll-thin,
+.glass.scroll-thin {
+  scrollbar-color: var(--tk-glass-border) transparent;
+}
