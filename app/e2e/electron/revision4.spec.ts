@@ -15,7 +15,7 @@ const save = (k: string, v: unknown) => {
 }
 
 const FAST: FakeStep = { firstTokenMs: 200, chunkMs: 20 }
-const PRIMARY = 'gemini-flash-lite-latest' // google:gemini-flash-lite
+const PRIMARY = 'gemini-3.5-flash-lite' // google:gemini-flash-lite, pinned for live answers (providers.ts LIVE_MODEL_IDS)
 const FALLBACK = 'gpt-5-mini' // openai:gpt-mini
 const ends = (h: Harness, sessionId: string) => h.logLines().filter((l) => l.event === 'candidate_end' && l.sessionId === sessionId)
 const gate = async (h: Harness, sessionId: string) => (await h.call('answers.gateStatus', { sessionId })).value

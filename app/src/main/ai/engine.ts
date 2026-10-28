@@ -16,7 +16,7 @@ import { log } from '../log'
 import { captureScreen } from '../capture/screenshot'
 import { healthOf, noteSlowSwitch, reportError, reportSuccess, stickyFallback } from './health'
 import { answerSystemPrompt, chatMessage, maxTokensFor, screenshotMessage, splitReply, transcriptMessage, type AnswerContext } from './prompts'
-import { ProviderError } from './provider'
+import { ProviderError, type Usage } from './provider'
 import { resolveModel, type ResolvedModel } from './providers'
 import { fallbackForBlocked, routing, usableFallback } from './routing'
 import { describe, Stop, Watchdog } from './run'
@@ -74,6 +74,12 @@ export function onFirstToken(fn: (e: { sessionId: string; answerId: string }) =>
 
 const round = (n: number) => Math.round(n)
 
+/**
+ * Revision 6 M1: live answers ask for the model's lowest thinking setting, which comes
+ * before the first visible token. PARLEY_THINKING=default turns it off for comparisons.
+ */
+export const liveThinking = (): 'minimum' | 'default' => (process.env['PARLEY_THINKING'] === 'default' ? 'default' : 'minimum')
+
 function timingOf(f: Flight): AnswerTiming {
   const t: AnswerTiming = { ...f.timing, ttftMs: f.ttft.map((x) => (x === null ? null : round(x))), attempts: f.attempt }
   if (f.firstRequestAt !== null) t.buildMs = round(f.firstRequestAt - f.startedAt)
@@ -107,6 +113,10 @@ function logTiming(f: Flight, t: AnswerTiming, servedModel: string | null) {
     chunks: t.chunks,
     maxChunkGapMs: t.maxChunkGapMs,
     leadMs: t.leadMs,
+    inputTokens: t.inputTokens,
+    cachedTokens: t.cachedTokens,
+    reasoningTokens: t.reasoningTokens,
+    thinking: t.thinking,
   })
 }
 
@@ -371,7 +381,8 @@ const sleep = (ms: number, signal: AbortSignal) =>
 async function stream(f: Flight, s: SessionDb, modelId: string, excerpt: string, trigger: AnswerTrigger, text?: string, useFallback = false) {
   const alive = () => flights.get(f.answerId) === f
   let m: ResolvedModel | undefined
-  let usage: { input: number | null; output: number | null } | undefined
+  let usage: Usage | undefined
+  let thinking = liveThinking()
   const cfg = routing()
   let switched = false
   let servedModel: string | null = null
@@ -379,13 +390,13 @@ async function stream(f: Flight, s: SessionDb, modelId: string, excerpt: string,
   const toFallback = async (fb: string, reason: FallbackReason | null) => {
     switched = true
     servedModel = fb
-    m = await resolveModel(fb)
+    m = await resolveModel(fb, 'live')
     run('update answers set served_model = ?, fallback_reason = ?, updated_at = ? where id = ?', fb, reason, now(), f.answerId)
     log('answer_route', { sessionId: f.sessionId, answerId: f.answerId, trigger, attempt: f.attempt, servedModel: fb, fallbackReason: reason ?? undefined })
     emit('answer:route', { answerId: f.answerId, sessionId: f.sessionId, attempt: f.attempt, servedModel: fb, reason: reason ?? 'slow_first_token' })
   }
   try {
-    m = await resolveModel(modelId)
+    m = await resolveModel(modelId, 'live')
     let messages: ModelMessage[]
     if (trigger === 'screenshot') {
       const shot = await captureScreen(f.answerId, getSettings().privateMode)
@@ -419,7 +430,8 @@ async function stream(f: Flight, s: SessionDb, modelId: string, excerpt: string,
       f.ttft[attempt - 1] = null
       log('provider_request', { sessionId: s.id, answerId: f.answerId, trigger, provider: m.provider.id, model: m.catalogId, attempt })
       try {
-        for await (const ev of m.provider.stream({ model: m.model, system, messages, maxOutputTokens: maxTokensFor(s.answerPrefs.length) }, dog.signal)) {
+        f.timing.thinking = thinking
+        for await (const ev of m.provider.stream({ model: m.model, system, messages, maxOutputTokens: maxTokensFor(s.answerPrefs.length), thinking }, dog.signal)) {
           if (dog.reason) throw dog.reason
           if (!alive()) return
           if (ev.type === 'text') {
@@ -449,6 +461,13 @@ async function stream(f: Flight, s: SessionDb, modelId: string, excerpt: string,
         // A break after the first token says nothing about the model's limits: no cooling.
         if (e instanceof ProviderError && e.kind !== 'timeout' && f.firstTokenAt === null) reportError(m.catalogId, e)
         const pe = e instanceof ProviderError ? e : null
+        // M1: a Gemini model that rejects the thinking setting (400) gets the same request
+        // once without it. Other 400s and 403s (region, paid-only model) aren't retried.
+        if (pe?.kind === 'bad_request' && pe.status === 400 && m.providerId === 'google' && thinking === 'minimum' && f.firstTokenAt === null) {
+          log('provider_error', { sessionId: s.id, answerId: f.answerId, trigger, provider: m.provider.id, model: m.catalogId, attempt, errorKind: 'bad_request', errorCode: 'thinking_unsupported', status: pe.status })
+          thinking = 'default'
+          continue
+        }
         log('provider_error', { sessionId: s.id, answerId: f.answerId, trigger, provider: m.provider.id, model: m.catalogId, attempt, errorKind: pe?.kind ?? (e instanceof Stop ? 'timeout' : 'unknown'), status: pe?.status, quotaPeriod: pe?.quotaPeriod, retryAfterMs: pe?.retryAfterMs })
         // After the first token, a retry would bill again and repeat text: keep the partial.
         if (f.firstTokenAt !== null) throw Object.assign(new ProviderError(pe?.kind ?? 'unknown'), { interrupted: true })
@@ -502,6 +521,9 @@ async function stream(f: Flight, s: SessionDb, modelId: string, excerpt: string,
     const firstTokenMs = f.firstTokenAt === null ? null : Math.round(f.firstTokenAt - f.startedAt)
     const latencyMs = Math.round(performance.now() - f.startedAt)
     const timing = timingOf(f)
+    if (usage?.input != null) timing.inputTokens = usage.input
+    if (usage?.cached != null) timing.cachedTokens = usage.cached
+    if (usage?.reasoning != null) timing.reasoningTokens = usage.reasoning
     run(
       `update answers set status = 'done', end_reason = 'completed', question = ?, answer_md = ?, first_token_ms = ?, latency_ms = ?, input_tokens = ?, output_tokens = ?, timing = ?, error = null, updated_at = ?
        where id = ? and status = 'streaming'`,

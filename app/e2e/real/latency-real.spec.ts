@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { Harness, WORK } from '../electron/harness'
 
 const QS = ['What is dependency injection?', 'What is the difference between a process and a thread?', 'How does a database index speed up reads?']
-const MODEL = 'gemini-flash-lite-latest' // providers.ts: google:gemini-flash-lite
+const MODEL = 'gemini-3.5-flash-lite' // providers.ts LIVE_MODEL_IDS: google:gemini-flash-lite (live answers)
 
 test('LAT-R1 real Gemini: time to first token, in-app vs minimal raw call', async () => {
   const key = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? ''

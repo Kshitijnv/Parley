@@ -6,7 +6,7 @@ import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electro
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { LANGUAGES, MODEL_CATALOG } from '@shared/catalog'
+import { LANGUAGES, MODEL_CATALOG, providerOf } from '@shared/catalog'
 import { searchCompanies } from '@shared/companies'
 import { LIMITS, schemas, type Channel } from '@shared/ipc'
 import type { CompanyHit, DocumentFile, Resume, Session, TimelineItem } from '@shared/types'
@@ -40,7 +40,8 @@ import { closeGate, gateStatus, openGate, submitManual } from './ai/gate'
 import { askReview, convertResume, importJob, nextInterviewQuestion, parseResume, preview, queueNotes } from './ai/content'
 import { clearAuth } from './ai/health'
 import { testKey } from './ai/keytest'
-import { modelProviders } from './ai/providers'
+import { isFake, modelProviders, providerModelId } from './ai/providers'
+import { warmProvider } from './ai/transport'
 import { clearLive, feedAudio, injectThem, liveLines, liveSessionId, loadedModelIds, prepareStt, startLive, stopLive, sttStatus } from './live'
 import { deleteKey, getKey, keyStatus, markVerified, setKey } from './secrets'
 import { cancelInstall, deleteModel, installModel, languageSupported, listModels, manifest, modelForLanguage, verifyModel } from './stt/registry'
@@ -103,6 +104,25 @@ function checkModel(id: string) {
   if (!MODEL_CATALOG.some((m) => m.id === id) && !process.env['PARLEY_MODEL_MAP']?.includes(id)) throw new AppError('Pick a model from the list.', 'validation', 'model')
 }
 
+// Revision 6 M4: open the answer model's connection when a call starts, and keep it
+// open while the call is live, so a question doesn't begin with a TLS handshake.
+const WARM_EVERY_MS = 45_000
+
+function keepWarm(id: string) {
+  if (isFake()) return
+  const tick = () => {
+    if (liveSessionId() !== id) return clearInterval(timer)
+    try {
+      const catalogId = requireSession(id).model
+      void warmProvider(providerOf(catalogId), catalogId, providerModelId(catalogId, 'live'), id)
+    } catch {
+      clearInterval(timer)
+    }
+  }
+  const timer = setInterval(tick, WARM_EVERY_MS)
+  tick()
+}
+
 async function startSession(id: string): Promise<Session> {
   const s = requireSession(id)
   if (s.status === 'ended') throw new AppError('This call has ended. Create a new session to start another.', 'conflict')
@@ -122,7 +142,10 @@ async function startSession(id: string): Promise<Session> {
     changed('sessions')
     throw e
   }
-  if (!wasLive) openGate(id)
+  if (!wasLive) {
+    openGate(id)
+    keepWarm(id)
+  }
   changed('sessions')
   return sessionOut(requireSession(id))
 }

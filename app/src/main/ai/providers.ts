@@ -24,6 +24,17 @@ const MODEL_IDS: Record<string, string> = {
   'groq:llama-instant': 'llama-3.1-8b-instant',
 }
 
+/**
+ * Revision 6 M2: live answers (auto, Answer, Chat, Screenshot) use an exact model id, so
+ * an alias moving to a slower model can't change call latency. Chosen by the TTFT bench
+ * (scripts/ttft-bench.mjs, results in replica/backend.md). Background work keeps the alias.
+ */
+const LIVE_MODEL_IDS: Record<string, string> = {
+  // Bench 2026-10-29: same first-token time as the alias (p50 1.69 s vs 1.55 s) and it
+  // shares the alias's prompt cache, so the alias currently points here.
+  'google:gemini-flash-lite': 'gemini-3.5-flash-lite',
+}
+
 const LLM: Provider[] = ['google', 'openai', 'anthropic', 'groq']
 
 function overrides(): Record<string, string> {
@@ -34,8 +45,8 @@ function overrides(): Record<string, string> {
   }
 }
 
-export function providerModelId(catalogId: string): string {
-  return overrides()[catalogId] ?? MODEL_IDS[catalogId] ?? catalogId.slice(catalogId.indexOf(':') + 1)
+export function providerModelId(catalogId: string, use: 'live' | 'background' = 'background'): string {
+  return overrides()[catalogId] ?? (use === 'live' ? LIVE_MODEL_IDS[catalogId] : undefined) ?? MODEL_IDS[catalogId] ?? catalogId.slice(catalogId.indexOf(':') + 1)
 }
 
 export function providerLabel(p: Provider): string {
@@ -56,10 +67,10 @@ export function isVisionModel(catalogId: string): boolean {
   return MODEL_CATALOG.find((m) => m.id === catalogId)?.vision ?? false
 }
 
-export async function resolveModel(catalogId: string): Promise<ResolvedModel> {
+export async function resolveModel(catalogId: string, use: 'live' | 'background' = 'background'): Promise<ResolvedModel> {
   const providerId = providerOf(catalogId)
   if (!LLM.includes(providerId)) throw new AppError(`${modelLabel(catalogId)} is not a language model.`, 'validation')
-  const model = providerModelId(catalogId)
+  const model = providerModelId(catalogId, use)
   if (isFake()) return { provider: fakeProvider(), providerId, catalogId, model }
   const key = await getKey(providerId)
   if (!key) throw new AppError(`Add a ${providerLabel(providerId)} API key in Settings to use ${modelLabel(catalogId)}.`, 'no_key')

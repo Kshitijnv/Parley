@@ -11,11 +11,21 @@ export interface ModelRequest {
   messages: ModelMessage[]
   maxOutputTokens: number
   temperature?: number
+  /** Revision 6 M1: 'minimum' asks for the least thinking the model allows (live answers). */
+  thinking?: 'minimum' | 'default'
+}
+
+export interface Usage {
+  input: number | null
+  output: number | null
+  /** Revision 6 M3: input tokens served from the provider's prompt cache, and thinking tokens. */
+  cached?: number | null
+  reasoning?: number | null
 }
 
 export type ModelEvent =
   | { type: 'text'; text: string }
-  | { type: 'finish'; reason: 'stop' | 'length' | 'other'; usage?: { input: number | null; output: number | null } }
+  | { type: 'finish'; reason: 'stop' | 'length' | 'other'; usage?: Usage }
 
 export type ProviderErrorKind = 'rate_limited' | 'quota_exhausted' | 'overloaded' | 'auth' | 'bad_request' | 'not_found' | 'offline' | 'timeout' | 'unknown'
 

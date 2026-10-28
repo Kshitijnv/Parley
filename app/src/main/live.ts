@@ -52,6 +52,14 @@ interface WorkerMsg {
   language?: string
   loadMs?: number
   message?: string
+  /** Revision 6 T1 timing, numbers and enums only. */
+  endpoint?: 'model' | 'flush' | 'vad'
+  sttMs?: number
+  rtf?: number
+  backlogMs?: number
+  partialLagMs?: number
+  partialEveryMs?: number
+  count?: number
 }
 
 interface LanePartial {
@@ -350,6 +358,9 @@ function attach(l: Live, w: Worker) {
       l.partial[m.speaker!] = null
       if (m.speaker === 'them') l.detector.onThemPartial('')
       onFinal(l, m.speaker!, m.text ?? '', Math.max(0, (m.endMs ?? 0) - (m.startMs ?? 0)))
+      log('stt_final', { sessionId: l.sessionId, sttModelId: w.modelId, speaker: m.speaker, endpoint: m.endpoint, sttMs: m.sttMs })
+    } else if (m.type === 'stats') {
+      log('stt_timing', { sessionId: l.sessionId, sttModelId: w.modelId, speaker: m.speaker, rtf: m.rtf, backlogMs: m.backlogMs, partialLagMs: m.partialLagMs, partialEveryMs: m.partialEveryMs, count: m.count })
     } else if (m.type === 'flushed') l.onFlushed?.()
   }
 }
@@ -452,7 +463,7 @@ export function feedAudio(speaker: unknown, pcm: unknown) {
     if (frameRms(bytes) > VOICE_RMS) voiceUntil = t + VOICE_HANGOVER_MS
     l.detector.onThemVoice(t < voiceUntil)
   }
-  l.worker.proc.postMessage({ type: 'audio', speaker, pcm: bytes })
+  l.worker.proc.postMessage({ type: 'audio', speaker, pcm: bytes, at: Date.now() })
 }
 
 // ---------- read access for the engine and the gate ----------

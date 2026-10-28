@@ -83,6 +83,17 @@ ipcMain.on('broadcast', (e, event: string, payload: unknown) => {
 })
 
 app.whenReady().then(() => {
+  // Development only: the time-to-first-token bench (revision 6 M7) runs and quits.
+  const bench = isDev ? process.env['PARLEY_BENCH'] : undefined
+  if (bench) {
+    ensureDirs()
+    openDb()
+    void import('./ai/bench')
+      .then((b) => b.runBench(bench))
+      .catch((e) => console.error('bench failed:', (e as Error).name))
+      .finally(() => app.quit())
+    return
+  }
   // Development-only test switch: no mic and no loopback, so tests never record this PC.
   const testNoCapture = isDev && process.env['PARLEY_TEST_NO_CAPTURE'] === '1'
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {

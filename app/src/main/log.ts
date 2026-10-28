@@ -52,6 +52,16 @@ const FIELDS = new Set([
   'chunks',
   'maxChunkGapMs',
   'leadMs',
+  // revision 6 T1 / M3: speech worker timing, prompt size, thinking setting
+  'speaker',
+  'endpoint',
+  'rtf',
+  'backlogMs',
+  'partialLagMs',
+  'partialEveryMs',
+  'cachedTokens',
+  'reasoningTokens',
+  'thinking',
 ])
 
 // Identifiers, enum values and model ids only: no spaces, at most 80 characters.

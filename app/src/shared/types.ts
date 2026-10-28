@@ -90,6 +90,11 @@ export interface AnswerTiming {
   chunks?: number
   maxChunkGapMs?: number
   leadMs?: number
+  /** Revision 6 M3: prompt size, cache hits and thinking tokens; M1: the thinking setting sent. */
+  inputTokens?: number
+  cachedTokens?: number
+  reasoningTokens?: number
+  thinking?: 'minimum' | 'default'
 }
 
 export interface Settings {

@@ -9,19 +9,20 @@ import type { ZodType } from 'zod'
 import type { Provider } from '@shared/types'
 import { classify } from './gemini'
 import type { AnswerProvider, CompleteResult, ModelEvent, ModelRequest } from './provider'
+import { providerFetch } from './transport'
 
 type SdkProvider = Exclude<Provider, 'deepgram' | 'logodev'>
 
 function factory(provider: SdkProvider, apiKey: string): (model: string) => LanguageModel {
   switch (provider) {
     case 'google':
-      return createGoogleGenerativeAI({ apiKey })
+      return createGoogleGenerativeAI({ apiKey, fetch: providerFetch })
     case 'openai':
-      return createOpenAI({ apiKey })
+      return createOpenAI({ apiKey, fetch: providerFetch })
     case 'anthropic':
-      return createAnthropic({ apiKey })
+      return createAnthropic({ apiKey, fetch: providerFetch })
     default:
-      return createGroq({ apiKey })
+      return createGroq({ apiKey, fetch: providerFetch })
   }
 }
 
@@ -45,6 +46,9 @@ export function sdkProvider(provider: SdkProvider, apiKey: string, vision: (mode
         maxOutputTokens: req.maxOutputTokens,
         temperature: req.temperature,
         providerOptions: FAST[provider] as never,
+        // Gemini: the SDK maps 'none' to each model's lowest thinking setting
+        // (thinkingLevel 'minimal' on Gemini 3 ids and aliases, thinkingBudget 0 on 2.5).
+        ...(req.thinking === 'minimum' && provider === 'google' ? { reasoning: 'none' as const } : {}),
         // The SDK's default handler console.logs the error with the request body.
         onError: () => {},
       })
@@ -59,7 +63,8 @@ export function sdkProvider(provider: SdkProvider, apiKey: string, vision: (mode
             return
           } else if (part.type === 'finish') {
             const reason = part.finishReason === 'stop' ? 'stop' : part.finishReason === 'length' ? 'length' : 'other'
-            finish = { type: 'finish', reason, usage: { input: part.totalUsage?.inputTokens ?? null, output: part.totalUsage?.outputTokens ?? null } }
+            const u = part.totalUsage
+            finish = { type: 'finish', reason, usage: { input: u?.inputTokens ?? null, output: u?.outputTokens ?? null, cached: u?.inputTokenDetails?.cacheReadTokens ?? null, reasoning: u?.outputTokenDetails?.reasoningTokens ?? null } }
           }
         }
       } catch (e) {
