@@ -186,6 +186,10 @@
 .md > * + * {
   margin-top: var(--tk-space-4);
 }
+/* Revision 5: answers render block by block; space elements inside one block the same way. */
+.md-block > * + * {
+  margin-top: var(--tk-space-4);
+}
 .md ul,
 .md ol {
   padding-left: var(--tk-space-6);

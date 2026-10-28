@@ -5,6 +5,7 @@
 // the §6 table, and the opt-in fallback switch follows A4.3 (before the first token,
 // at most once, same answerId, never two provider requests at the same time).
 import type { ModelMessage } from 'ai'
+import { leadEnd } from '@shared/answerBlocks'
 import type { AnswerEndReason, AnswerTiming, AnswerTrigger, FallbackReason } from '@shared/types'
 import { all, get, run, tx } from '../db/client'
 import { answerFromRow, findResume, getAnswer, getSettings, now, uuid, type SessionDb } from '../db/repo'
@@ -51,6 +52,11 @@ interface Flight {
   attemptAt: number
   ttft: Array<number | null>
   firstAnswerAt: number | null
+  /** Revision 5 D5: provider deltas, the gap between them, and when the lead paragraph completed. */
+  chunks: number
+  lastChunkAt: number | null
+  maxChunkGap: number
+  leadAt: number | null
 }
 
 const flights = new Map<string, Flight>()
@@ -73,6 +79,11 @@ function timingOf(f: Flight): AnswerTiming {
   if (f.firstRequestAt !== null) t.buildMs = round(f.firstRequestAt - f.startedAt)
   if (f.firstTokenAt !== null && f.firstAnswerAt !== null) t.headerMs = round(f.firstAnswerAt - f.firstTokenAt)
   if (f.firstAnswerAt !== null) t.streamMs = round(performance.now() - f.firstAnswerAt)
+  if (f.chunks) {
+    t.chunks = f.chunks
+    t.maxChunkGapMs = round(f.maxChunkGap)
+  }
+  if (f.leadAt !== null && f.firstAnswerAt !== null) t.leadMs = round(f.leadAt - f.firstAnswerAt)
   return t
 }
 
@@ -93,6 +104,9 @@ function logTiming(f: Flight, t: AnswerTiming, servedModel: string | null) {
     ttftMs: t.ttftMs.at(-1) ?? undefined,
     headerMs: t.headerMs,
     streamMs: t.streamMs,
+    chunks: t.chunks,
+    maxChunkGapMs: t.maxChunkGapMs,
+    leadMs: t.leadMs,
   })
 }
 
@@ -224,6 +238,10 @@ export function beginAnswer(o: {
     attemptAt: 0,
     ttft: [],
     firstAnswerAt: null,
+    chunks: 0,
+    lastChunkAt: null,
+    maxChunkGap: 0,
+    leadAt: null,
   }
   flights.set(id, f)
   const draft = o.trigger === 'chat' ? (o.text ?? null) : o.questionDraft
@@ -317,9 +335,15 @@ function pump(f: Flight, final = false) {
     emit('answer:delta', { answerId: f.answerId, sessionId: f.sessionId, seq: f.seq, part: 'answer', offset: f.sentAnswer.length, text: a.slice(f.sentAnswer.length), attempt: f.attempt })
     f.sentAnswer = a
   }
+  // The lead paragraph is complete once a block boundary follows it (or the reply ends).
+  if (f.leadAt === null && f.sentAnswer && leadEnd(f.sentAnswer, final) !== null) f.leadAt = performance.now()
 }
 
 function onText(f: Flight, d: string) {
+  const at = performance.now()
+  if (f.lastChunkAt !== null && f.chunks > 0) f.maxChunkGap = Math.max(f.maxChunkGap, at - f.lastChunkAt)
+  f.lastChunkAt = at
+  f.chunks++
   if (f.firstTokenAt === null) {
     f.firstTokenAt = performance.now()
     f.ttft[f.attempt - 1] = f.firstTokenAt - f.attemptAt

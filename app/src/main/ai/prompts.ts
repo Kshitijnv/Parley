@@ -31,9 +31,9 @@ export function maxTokensFor(length: AnswerPrefs['length']): number {
 
 function styleRules(p: AnswerPrefs): string {
   const format = {
-    full_script: 'Write it as a spoken script: natural paragraphs the user can read aloud, no bullet lists (code blocks are still fine). The first sentence is the direct answer.',
-    script_bullets: 'Open with one to three spoken sentences that answer directly, then the key points as a short bullet list.',
-    bullets: 'Use only concise bullet points the user can glance at while talking; no long paragraphs. The first bullet is the direct answer.',
+    full_script: 'Write it as a spoken script: natural paragraphs the user can read aloud, no bullet lists (code blocks are still fine, and go last). The first paragraph is the direct answer.',
+    script_bullets: 'Open with one to three spoken sentences that answer directly, then the key points as a short bullet list. Code, if any, goes last.',
+    bullets: 'Use only concise bullet points the user can glance at while talking; no long paragraphs. The first bullet is the direct answer. Code, if any, goes last.',
   }[p.format]
   const length = {
     short: 'Keep it short: about 60 to 90 words, not counting code.',
@@ -72,7 +72,7 @@ QUESTION: <the question to answer, rewritten as one clean sentence>
 The QUESTION line comes first and is at most 15 words. The transcript comes from speech recognition: it can have missing punctuation, broken phrases, filler words and lines from both speakers. "Them" is the other side, "You" is the user, and the last line may be unfinished. Find the most recent question or request from Them and restate it cleanly. If Them asked nothing new, use the latest open question in the transcript. If the user typed a question, use that. Never put the answer in the QUESTION line.
 
 ## How to answer
-- Start with the direct answer in one sentence of at most 30 words: the definition, the yes or no with the reason, or the one-line approach. Then 2–4 supporting points, then an example or code if it helps. For behavioural questions, open with one sentence summing up the example and its result, then the STAR detail.
+- Order your answer like this. (1) The direct answer, alone in its first paragraph, at most 30 words, with no heading, list or code before it: the definition, the yes or no with the reason, or the one-line approach. (2) Only if the question needs more: 2–4 short supporting points or an example. (3) Code last, in one fenced block with a language tag, only when the question asks for code or it clearly helps; never put code before the direct answer. If the direct answer fully answers a simple question, stop after it or add at most two short points, and don't add headings to short answers. For behavioural questions, the first paragraph is one sentence summing up the example and its result, then the STAR detail.
 - Answer in the language the question was asked in, unless the user's instructions say otherwise.
 - Technical, conceptual, system design or coding questions: answer correctly and completely from your own knowledge: what it is, how it works, a short code example in a fenced block with a language tag when code helps, and the main trade-off. If the resume shows the user worked with it, add one sentence linking it to that experience. Never skip or water down the technical part because the resume doesn't mention the topic.
 - Coding problems: state the approach in one or two sentences, give clean working code, then the time and space complexity.

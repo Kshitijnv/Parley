@@ -86,6 +86,10 @@ export interface AnswerTiming {
   headerMs?: number
   streamMs?: number
   attempts: number
+  /** Revision 5 D5: text deltas from the provider, the longest gap between them, first answer text → lead complete. */
+  chunks?: number
+  maxChunkGapMs?: number
+  leadMs?: number
 }
 
 export interface Settings {

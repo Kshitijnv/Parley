@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Eraser, MessageSquare, Pencil, RotateCw, Square, Star } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowDown, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Eraser, MessageSquare, Pencil, RotateCw, Square, Star } from 'lucide-react'
+import { leadEnd } from '@shared/answerBlocks'
 import type { AnswerErrorCode, AnswerTrigger, FallbackReason, Hotkeys } from '@shared/types'
 import { modelLabel } from '@shared/catalog'
 import { cn } from '@renderer/components/ui/cn'
@@ -32,6 +33,8 @@ export interface AnswerView {
   fallbackReason?: FallbackReason | null
   /** A fallback the user may choose with one press after a daily quota. */
   fallbackOffer?: string
+  /** Revision 5 D4: the highest provider attempt seen on a delta. */
+  attempt?: number
 }
 
 const ROUTE_WHY: Record<FallbackReason, string> = {
@@ -88,18 +91,34 @@ export function AnswerPanel({
   const [size, setSize] = useState(loadSize)
   const [copied, setCopied] = useState(false)
   const body = useRef<HTMLDivElement>(null)
-  const stick = useRef(true)
   const now = useNow(500)
   const a = cleared ? undefined : answers[index]
   const streaming = a?.status === 'streaming'
+  // Revision 5 D3: where the direct-answer paragraph ends (null while it's still arriving).
+  const lead = useMemo(() => (a?.md ? leadEnd(a.md, !streaming) : null), [a?.md, streaming])
 
+  // Revision 5 D4 anchoring: follow new text only until the lead is complete, so the
+  // definition stays readable while the rest arrives. Once the user scrolls, the card never
+  // moves on its own; "More below" scrolls down and follows from then on.
+  const follow = useRef<'lead' | 'bottom' | 'off'>('lead')
+  const [below, setBelow] = useState(false)
+  const measure = () => {
+    const el = body.current
+    setBelow(!!el && el.scrollHeight - el.scrollTop - el.clientHeight > 24)
+  }
   useEffect(() => {
-    stick.current = true
+    follow.current = 'lead'
+    setBelow(false)
   }, [a?.id])
   useEffect(() => {
     const el = body.current
-    if (el && stick.current && streaming) el.scrollTop = el.scrollHeight
-  }, [a?.md, streaming])
+    if (!el || !streaming) return measure()
+    if (follow.current === 'bottom' || (follow.current === 'lead' && lead === null)) el.scrollTop = el.scrollHeight
+    measure()
+  }, [a?.md, streaming, lead])
+  const userScrolled = () => {
+    follow.current = 'off'
+  }
 
   const startResize = (e: React.PointerEvent) => {
     const panel = (e.currentTarget as HTMLElement).closest('section') as HTMLElement
@@ -162,10 +181,10 @@ export function AnswerPanel({
         <>
           <div
             ref={body}
-            onScroll={(e) => {
-              const el = e.currentTarget
-              stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
-            }}
+            onScroll={measure}
+            onWheel={userScrolled}
+            onTouchMove={userScrolled}
+            onKeyDown={(e) => ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key) && userScrolled()}
             className={cn('scroll-thin min-h-0 flex-1 overflow-y-auto px-3.5 anim-fade', collapsed && 'pb-3')}
             key={a.id}
             tabIndex={0}
@@ -182,7 +201,7 @@ export function AnswerPanel({
               <div className="mt-2.5 pb-3">
                 {a.status === 'failed' ? (
                   <>
-                    {a.md && <Markdown text={a.md} className="mb-2.5 text-sm leading-5 text-glass-text" />}
+                    {a.md && <Markdown text={a.md} lead={lead} className="mb-2.5 text-sm leading-5 text-glass-text" />}
                     <ErrorBody a={a} retryIn={retryIn} onRetry={() => onRetry(a)} onFallback={onFallback && (() => onFallback(a))} fallbackLabel={fallbackLabel} onAnswerWithFallback={() => onAnswerWithFallback(a)} />
                   </>
                 ) : (
@@ -191,7 +210,7 @@ export function AnswerPanel({
                       <Star size={14} className="text-glass-highlight" fill="currentColor" aria-hidden />
                       Answer:
                     </p>
-                    {a.md ? <Markdown text={a.md} streaming={streaming} className="text-sm leading-5 text-glass-text" /> : streaming ? <span className="caret text-glass-text-muted" /> : null}
+                    {a.md ? <Markdown text={a.md} streaming={streaming} lead={lead} className="text-sm leading-5 text-glass-text" /> : streaming ? <span className="caret text-glass-text-muted" /> : null}
                   </>
                 )}
               </div>
@@ -203,6 +222,18 @@ export function AnswerPanel({
               {a.firstTokenMs ? <span>· first words in {(a.firstTokenMs / 1000).toFixed(1)} s</span> : null}
               {a.servedModel ? <span>· answered by {modelLabel(a.servedModel)}{a.fallbackReason ? ` (${ROUTE_WHY[a.fallbackReason]})` : ''}</span> : null}
               <span className="flex-1" />
+              {below && streaming && (
+                <GlassChip
+                  label="More below"
+                  icon={<ArrowDown size={12} />}
+                  onClick={() => {
+                    follow.current = 'bottom'
+                    const el = body.current
+                    if (el) el.scrollTop = el.scrollHeight
+                    measure()
+                  }}
+                />
+              )}
               <IconButton
                 label={copied ? 'Copied' : 'Copy answer'}
                 tone="glass"

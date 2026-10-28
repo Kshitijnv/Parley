@@ -48,6 +48,10 @@ const FIELDS = new Set([
   'ttftMs',
   'headerMs',
   'streamMs',
+  // revision 5 D5
+  'chunks',
+  'maxChunkGapMs',
+  'leadMs',
 ])
 
 // Identifiers, enum values and model ids only: no spaces, at most 80 characters.
