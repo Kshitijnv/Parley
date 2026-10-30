@@ -51,6 +51,15 @@ export const answerRoutingSchema = z.object({
   stickyWindowMs: int(10000, 600000),
 })
 
+export const cloudSttSchema = z.object({
+  enabled: z.boolean(),
+  consentedAt: z.number().int().nullable(),
+  maxDelayS: z.number().min(0.7).max(4),
+  eouSilenceS: z.number().min(0.2).max(2),
+  vocab: z.boolean(),
+  minLeftMin: int(0, 600),
+})
+
 const modelId = z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/)
 
 export const settingsPatchSchema = z
@@ -68,6 +77,7 @@ export const settingsPatchSchema = z
     overlayBounds: boundsSchema.nullable(),
     autoPolicy: autoPolicySchema.partial(),
     answerRouting: answerRoutingSchema.partial(),
+    cloudStt: cloudSttSchema.partial(),
   })
   .partial()
 
@@ -93,6 +103,16 @@ export const schemas = {
   'keys:set': z.object({ provider, key: z.string().trim().min(8, 'That key looks too short.') }),
   'keys:test': z.object({ provider }),
   'keys:delete': z.object({ provider }),
+  // revision 7 S4/S6: cloud speech keys (Speechmatics), up to 5, tried in order
+  'speechKeys:add': z.object({
+    key: z.string().trim().min(16, 'That key looks too short.').max(200).regex(/^\S+$/, 'Paste the key without spaces.'),
+    label: z.string().trim().max(40),
+    budgetHours: z.number().min(0.1).max(10_000).nullable(),
+  }),
+  'speechKeys:update': z.object({ id, label: z.string().trim().max(40).optional(), budgetHours: z.number().min(0.1).max(10_000).nullable().optional() }),
+  'speechKeys:test': z.object({ id }),
+  'speechKeys:move': z.object({ id, by: z.union([z.literal(-1), z.literal(1)]) }),
+  'speechKeys:remove': z.object({ id }),
   'sessions:list': z.object({ q: z.string().optional(), sort: z.enum(['newest', 'oldest']).optional() }),
   'sessions:get': z.object({ id }),
   'sessions:create': createSessionSchema,

@@ -32,6 +32,7 @@ import type {
   Segment,
   Session,
   SessionCard,
+  SpeechKey,
   Settings,
   Speaker,
   TimelineItem,
@@ -84,7 +85,7 @@ export interface ApiEvents {
   'hotkey:fired': { action: HotkeyAction }
   'window:state': WindowState
   /** Contract addition: lets other windows refresh lists after a write. */
-  'data:changed': { area: 'sessions' | 'resumes' | 'documents' | 'settings' | 'keys' | 'notes' | 'transcript' }
+  'data:changed': { area: 'sessions' | 'resumes' | 'documents' | 'settings' | 'keys' | 'speechKeys' | 'notes' | 'transcript' }
 }
 
 export type ApiEventName = keyof ApiEvents
@@ -100,6 +101,16 @@ export interface Api {
     set(input: { provider: Provider; key: string }): Promise<{ last4: string }> // keys:set
     test(input: { provider: Provider }): Promise<{ ok: boolean; error?: string }> // keys:test
     delete(input: { provider: Provider }): Promise<{ ok: true }> // keys:delete
+  }
+  /** Revision 7 S4/S6: cloud speech keys. The key is write-only: only the last 4 characters come back. */
+  speechKeys: {
+    list(): Promise<SpeechKey[]> // speechKeys:list
+    add(input: { key: string; label: string; budgetHours: number | null }): Promise<{ key: SpeechKey; test: { ok: boolean; error?: string } }> // speechKeys:add
+    update(input: { id: string; label?: string; budgetHours?: number | null }): Promise<SpeechKey> // speechKeys:update
+    /** Also the "Try again" for a used-up or rate-limited key. */
+    test(input: { id: string }): Promise<{ ok: boolean; error?: string }> // speechKeys:test
+    move(input: { id: string; by: -1 | 1 }): Promise<SpeechKey[]> // speechKeys:move
+    remove(input: { id: string }): Promise<{ ok: true }> // speechKeys:remove
   }
   models: {
     list(): Promise<Model[]> // models:list (only providers with keys)

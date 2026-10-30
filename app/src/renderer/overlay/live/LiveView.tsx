@@ -119,7 +119,21 @@ export function LiveView({ id }: { id: string }) {
     }))
   }, live ? 120 : null)
 
-  useEvent('stt:status', (p) => setStt(p))
+  // Revision 7 S4.4: say so briefly when the other side's text changes engine or key.
+  const speechRef = useRef<SttStatus['speech']>(undefined)
+  const speechWasCloud = useRef(false)
+  useEvent('stt:status', (p) => {
+    const was = speechRef.current
+    const now = p.speech
+    speechRef.current = now
+    setStt(p)
+    if (!was || !now || (was.mode === now.mode && was.keySlot === now.keySlot)) return
+    const name = now.keyLabel || `key ${now.keySlot ?? ''}`.trim()
+    if (now.mode === 'cloud' && was.mode === 'cloud') toast({ text: `Switched to Speechmatics ${name}` })
+    else if (now.mode === 'cloud' && was.mode === 'local_fallback' && speechWasCloud.current) toast({ text: `Cloud speech is back (${name})` })
+    else if (now.mode === 'local_fallback' && was.mode === 'cloud') toast({ text: 'Cloud speech dropped: showing local text' })
+    if (now.mode === 'cloud') speechWasCloud.current = true
+  })
   useEvent('transcript:partial', (p) => {
     if (p.sessionId === id) setPartial(p.text ? { speaker: p.speaker, text: p.text } : null)
   })

@@ -45,6 +45,7 @@ import { warmProvider } from './ai/transport'
 import { clearLive, feedAudio, injectThem, liveLines, liveSessionId, loadedModelIds, prepareStt, startLive, stopLive, sttStatus } from './live'
 import { deleteKey, getKey, keyStatus, markVerified, setKey } from './secrets'
 import { cancelInstall, deleteModel, installModel, languageSupported, listModels, manifest, modelForLanguage, verifyModel } from './stt/registry'
+import { addSpeechKey, listSpeechKeys, moveSpeechKey, removeSpeechKey, testSpeechKey, updateSpeechKey } from './stt/keys'
 import { setPrivate } from './windows'
 
 const rendererUrl = () => process.env['ELECTRON_RENDERER_URL'] ?? pathToFileURL(join(import.meta.dirname, '../renderer/index.html')).href
@@ -245,6 +246,13 @@ export function registerIpc() {
   handle('settings:get', () => getSettings())
   handle('settings:update', (p) => {
     if (p.sttProvider === 'deepgram') throw new AppError('Deepgram streaming is not built yet, so transcription stays on the local English model.', 'not_supported', 'sttProvider')
+    if (p.cloudStt) {
+      // Revision 7 S6: cloud speech turns on only with the consent text accepted; main stamps the time.
+      const cur = getSettings().cloudStt
+      const consentedAt = p.cloudStt.consentedAt === undefined ? cur.consentedAt : p.cloudStt.consentedAt === null ? null : now()
+      if ((p.cloudStt.enabled ?? cur.enabled) && consentedAt === null) throw new AppError('Accept the cloud speech notice first.', 'validation', 'cloudStt')
+      p = { ...p, cloudStt: { ...p.cloudStt, consentedAt } }
+    }
     if (p.defaultModel) checkModel(p.defaultModel)
     if (p.visionModel) checkModel(p.visionModel)
     if (p.answerRouting) {
@@ -275,6 +283,34 @@ export function registerIpc() {
     deleteKey(provider)
     clearAuth(provider)
     changed('keys')
+    return { ok: true }
+  })
+  // revision 7 S4/S6: cloud speech keys; the key is write-only
+  handle('speechKeys:list', () => listSpeechKeys())
+  handle('speechKeys:add', async ({ key, label, budgetHours }) => {
+    const saved = await addSpeechKey(key, label, budgetHours)
+    const test = await testSpeechKey(saved.id)
+    changed('speechKeys')
+    return { key: listSpeechKeys().find((k) => k.id === saved.id) ?? saved, test }
+  })
+  handle('speechKeys:update', ({ id, label, budgetHours }) => {
+    const out = updateSpeechKey(id, { label, budgetHours })
+    changed('speechKeys')
+    return out
+  })
+  handle('speechKeys:test', async ({ id }) => {
+    const out = await testSpeechKey(id)
+    changed('speechKeys')
+    return out
+  })
+  handle('speechKeys:move', ({ id, by }) => {
+    const out = moveSpeechKey(id, by)
+    changed('speechKeys')
+    return out
+  })
+  handle('speechKeys:remove', ({ id }) => {
+    removeSpeechKey(id)
+    changed('speechKeys')
     return { ok: true }
   })
   handle('models:list', () => {

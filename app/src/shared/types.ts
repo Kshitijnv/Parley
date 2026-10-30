@@ -97,9 +97,44 @@ export interface AnswerTiming {
   thinking?: 'minimum' | 'default'
 }
 
+/** Revision 7 S6: cloud speech (Speechmatics) for the other side of the call. Off by default. */
+export interface CloudStt {
+  enabled: boolean
+  /** Epoch ms the user accepted the consent text; null = never. */
+  consentedAt: number | null
+  /** Seconds the service may wait before finishing words (0.7–4). */
+  maxDelayS: number
+  /** Seconds of silence that end a line (0.2–2). */
+  eouSilenceS: number
+  vocab: boolean
+  /** Skip a key with a budget when less than this is left at session start. */
+  minLeftMin: number
+}
+
+export type SpeechKeyState = 'unchecked' | 'ok' | 'rate_limited' | 'quota_exhausted' | 'auth_failed'
+
+/** Revision 7 S4: one cloud speech key. The key itself never leaves main. */
+export interface SpeechKey {
+  id: string
+  label: string
+  last4: string
+  /** 1-based place in the order keys are tried. */
+  position: number
+  state: SpeechKeyState
+  /** Epoch ms when a rate_limited or quota_exhausted key is tried again. */
+  stateUntil: number | null
+  lastErrorType: string | null
+  /** Parley's own count of audio streamed this UTC month, and in total. */
+  usedMs: number
+  usedTotalMs: number
+  budgetMs: number | null
+  verifiedAt: number | null
+}
+
 export interface Settings {
   autoPolicy: AutoPolicy
   answerRouting: AnswerRouting
+  cloudStt: CloudStt
   theme: Theme
   zoom: number
   privateMode: boolean
@@ -383,6 +418,8 @@ export interface SttStatus {
   modelId?: string
   language?: string
   loadMs?: number
+  /** Revision 7: which engine shows the other side's words. Absent outside a call. */
+  speech?: { mode: 'local' | 'cloud' | 'local_fallback'; keySlot?: number; keyLabel?: string }
 }
 
 export interface Notes {

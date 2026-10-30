@@ -1,7 +1,7 @@
 // Row <-> DTO mapping for the shared contract types (src/shared/types.ts). Every read
 // and write of the database goes through the main process; these helpers keep the
 // snake_case columns out of the handlers.
-import { DEFAULT_ANSWER_ROUTING, DEFAULT_AUTO_POLICY, DEFAULT_HOTKEYS, DEFAULT_PREFS } from '@shared/catalog'
+import { DEFAULT_ANSWER_ROUTING, DEFAULT_AUTO_POLICY, DEFAULT_CLOUD_STT, DEFAULT_HOTKEYS, DEFAULT_PREFS } from '@shared/catalog'
 import type {
   Answer,
   AnswerEndReason,
@@ -9,6 +9,7 @@ import type {
   AnswerRouting,
   AnswerTiming,
   AutoPolicy,
+  CloudStt,
   DocumentFile,
   DocumentRow,
   Notes,
@@ -56,6 +57,7 @@ export function getSettings(): Settings {
   return {
     autoPolicy: { ...DEFAULT_AUTO_POLICY, ...json<Partial<AutoPolicy>>(r['auto_policy'], {}) },
     answerRouting: routingOf(r['answer_routing']),
+    cloudStt: { ...DEFAULT_CLOUD_STT, ...json<Partial<CloudStt>>(r['cloud_stt'], {}) },
     theme: r['theme'] as Settings['theme'],
     zoom: Number(r['zoom']),
     privateMode: bool(r['private_mode']),
@@ -87,12 +89,14 @@ const SETTING_COLUMNS: Record<string, [string, (v: any) => string | number | nul
   lastBackupAt: ['last_backup_at', (v) => (v === null ? null : Number(v))],
   autoPolicy: ['auto_policy', (v) => JSON.stringify(v)],
   answerRouting: ['answer_routing', (v) => JSON.stringify(v)],
+  cloudStt: ['cloud_stt', (v) => JSON.stringify(v)],
 }
 
-export function patchSettings(patch: Partial<Omit<Settings, 'autoPolicy'>> & { autoPolicy?: Partial<AutoPolicy> }): Settings {
+export function patchSettings(patch: Partial<Omit<Settings, 'autoPolicy' | 'cloudStt'>> & { autoPolicy?: Partial<AutoPolicy>; cloudStt?: Partial<CloudStt> }): Settings {
   ensureSettings()
   // A partial policy merges into the stored one.
   if (patch.autoPolicy) patch = { ...patch, autoPolicy: { ...getSettings().autoPolicy, ...patch.autoPolicy } }
+  if (patch.cloudStt) patch = { ...patch, cloudStt: { ...getSettings().cloudStt, ...patch.cloudStt } }
   const sets: string[] = []
   const vals: Array<string | number | null> = []
   for (const [k, v] of Object.entries(patch)) {

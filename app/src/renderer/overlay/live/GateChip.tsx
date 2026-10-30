@@ -79,6 +79,11 @@ export function GateChip({ gate, stt, autoOn }: { gate: GateStatus | null; stt: 
       ? `This call: ${gate.counts.auto} automatic · ${gate.counts.manual} manual · ${gate.counts.suppressed} skipped${gate.counts.merged ? ` · ${gate.counts.merged} combined` : ''}${gate.counts.replaced ? ` · ${gate.counts.replaced} replaced` : ''}.`
       : null,
     gate?.last?.outcome === 'suppressed' && gate.last.reason ? `Last skipped: ${REASON[gate.last.reason] ?? 'skipped'}.` : null,
+    stt.speech?.mode === 'cloud'
+      ? `Their speech: cloud (Speechmatics${stt.speech.keyLabel ? ` · ${stt.speech.keyLabel}` : stt.speech.keySlot ? ` · key ${stt.speech.keySlot}` : ''}). Your microphone: local.`
+      : stt.speech?.mode === 'local_fallback'
+        ? 'Their speech: local. Cloud speech is connecting or unavailable; local text is shown meanwhile.'
+        : null,
     stt.modelId ? `Speech: ${stt.language ?? '?'} · ${stt.modelId}${stt.loadMs !== undefined ? ` · loaded in ${(stt.loadMs / 1000).toFixed(1)} s` : ''}` : null,
   ].filter(Boolean)
   return (

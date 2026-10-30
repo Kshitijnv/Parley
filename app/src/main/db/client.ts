@@ -7,11 +7,12 @@ import m0000 from './migrations/0000_init.sql?raw'
 import m0001 from './migrations/0001_live_since.sql?raw'
 import m0002 from './migrations/0002_live_pipeline.sql?raw'
 import m0003 from './migrations/0003_answer_routing.sql?raw'
+import m0004 from './migrations/0004_cloud_stt.sql?raw'
 
 // One SQLite file in %APPDATA%\<app>\data\app.db, opened only by the main process.
 // node:sqlite ships with Electron's Node, so there is no native module to rebuild.
 
-const MIGRATIONS = [m0000, m0001, m0002, m0003]
+const MIGRATIONS = [m0000, m0001, m0002, m0003, m0004]
 
 let db: DatabaseSync | null = null
 

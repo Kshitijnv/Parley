@@ -2,6 +2,9 @@
 // the one live session, turns its finals into transcript segments (seq assigned here,
 // single writer), drops mic echoes of the other side, batches segment writes every
 // 2 s, and forwards "them" speech to the TurnDetector. It decides nothing about answers.
+// Revision 7: with cloud speech on, the "them" lane shows Speechmatics' text while the
+// local worker keeps decoding as a hot standby; a failed cloud session switches the lane
+// to local within 1 s, and it switches back only between lines.
 import { utilityProcess, type UtilityProcess } from 'electron'
 import { join } from 'node:path'
 import { DEFAULT_AUTO_POLICY } from '@shared/catalog'
@@ -13,6 +16,9 @@ import { AppError } from './errors'
 import { log } from './log'
 import { TurnDetector, type Candidate } from './live/turns'
 import { filesOf, markCorrupt, modelForLanguage, type Manifest } from './stt/registry'
+import { createCloudLane } from './stt/cloud'
+import { speechKeyLabel } from './stt/keys'
+import type { CloudLane } from './stt/pool'
 
 interface Final {
   speaker: Speaker
@@ -84,6 +90,17 @@ interface Live {
   onFlushed: (() => void) | null
   stopping: boolean
   detector: TurnDetector
+  /** Revision 7: cloud speech for "them", or null for a local-only call. */
+  cloud: CloudLane | null
+  /** Which engine's text the "them" lane shows. */
+  themSource: 'local' | 'cloud'
+  /** The local engine's latest "them" partial while cloud is shown, for an instant switch. */
+  localThem: { utteranceId: number; rev: number; text: string } | null
+  cloudUtt: number
+  cloudRev: number
+  fallbackTimer: ReturnType<typeof setTimeout> | null
+  /** performance.now() of the last voiced "them" frame, for cloud sttMs. */
+  lastVoiceAt: number
 }
 
 let live: Live | null = null
@@ -95,6 +112,10 @@ const HOLD_YOU_MS = 3000
 const PARTIAL_EVERY_MS = 150
 const PREPARED_IDLE_MS = 60_000
 const READY_TIMEOUT_MS = 30_000
+// A cloud failure switches the lane to local text if no new session is up by then (S4.4).
+const CLOUD_FALLBACK_MS = 1000
+// Cloud utterance ids are kept apart from the worker's, so the renderer never merges them.
+const CLOUD_UTTERANCE_BASE = 1_000_000
 
 export function onCandidate(fn: (c: Candidate) => void) {
   candidateHook = fn
@@ -104,7 +125,13 @@ export const liveSessionId = () => live?.sessionId ?? null
 
 function workerStatus(w: Worker | null): SttStatus {
   if (!w) return { state: 'stopped' }
-  return { state: w.state, error: w.error, modelId: w.modelId, language: w.language, loadMs: w.loadMs }
+  return { state: w.state, error: w.error, modelId: w.modelId, language: w.language, loadMs: w.loadMs, speech: live?.worker === w ? speechOf(live) : undefined }
+}
+
+function speechOf(l: Live): SttStatus['speech'] {
+  if (!l.cloud) return { mode: 'local' }
+  if (l.themSource === 'cloud') return { mode: 'cloud', keySlot: l.cloud.slot, keyLabel: (l.cloud.keyId && speechKeyLabel(l.cloud.keyId)) || undefined }
+  return { mode: 'local_fallback' }
 }
 
 export function sttStatus(): SttStatus {
@@ -345,24 +372,101 @@ function flushSegments(l: Live) {
   }
 }
 
+function endPartial(l: Live, speaker: Speaker) {
+  const p = l.partial[speaker]
+  if (p?.pending) clearTimeout(p.pending)
+  l.partial[speaker] = null
+  if (speaker === 'them') l.detector.onThemPartial('')
+}
+
 function attach(l: Live, w: Worker) {
   l.worker = w
   if (w.idleTimer) clearTimeout(w.idleTimer)
   w.idleTimer = null
   w.onMessage = (m) => {
     if (live !== l || l.worker !== w) return
-    if (m.type === 'partial') onPartial(l, m.speaker!, m.utteranceId ?? 0, m.rev ?? 0, m.text ?? '')
-    else if (m.type === 'final') {
-      const p = l.partial[m.speaker!]
-      if (p?.pending) clearTimeout(p.pending)
-      l.partial[m.speaker!] = null
-      if (m.speaker === 'them') l.detector.onThemPartial('')
-      onFinal(l, m.speaker!, m.text ?? '', Math.max(0, (m.endMs ?? 0) - (m.startMs ?? 0)))
-      log('stt_final', { sessionId: l.sessionId, sttModelId: w.modelId, speaker: m.speaker, endpoint: m.endpoint, sttMs: m.sttMs })
+    // Standby: while cloud text is shown, local "them" output is kept aside, not shown.
+    const standby = m.speaker === 'them' && l.themSource === 'cloud'
+    if (m.type === 'partial') {
+      if (standby) l.localThem = m.text ? { utteranceId: m.utteranceId ?? 0, rev: m.rev ?? 0, text: m.text } : null
+      else onPartial(l, m.speaker!, m.utteranceId ?? 0, m.rev ?? 0, m.text ?? '')
+      if (m.speaker === 'them' && !m.text) maybeAdoptCloud(l)
+    } else if (m.type === 'final') {
+      if (standby) l.localThem = null
+      else {
+        endPartial(l, m.speaker!)
+        onFinal(l, m.speaker!, m.text ?? '', Math.max(0, (m.endMs ?? 0) - (m.startMs ?? 0)))
+      }
+      // Logged either way: one call gives cloud and local sttMs side by side.
+      log('stt_final', { sessionId: l.sessionId, sttModelId: w.modelId, sttEngine: 'local', speaker: m.speaker, endpoint: m.endpoint, sttMs: m.sttMs, outcome: standby ? 'standby' : undefined })
+      if (m.speaker === 'them') maybeAdoptCloud(l)
     } else if (m.type === 'stats') {
-      log('stt_timing', { sessionId: l.sessionId, sttModelId: w.modelId, speaker: m.speaker, rtf: m.rtf, backlogMs: m.backlogMs, partialLagMs: m.partialLagMs, partialEveryMs: m.partialEveryMs, count: m.count })
+      log('stt_timing', { sessionId: l.sessionId, sttModelId: w.modelId, sttEngine: 'local', speaker: m.speaker, rtf: m.rtf, backlogMs: m.backlogMs, partialLagMs: m.partialLagMs, partialEveryMs: m.partialEveryMs, count: m.count })
     } else if (m.type === 'flushed') l.onFlushed?.()
   }
+}
+
+// ---------- cloud speech (revision 7) ----------
+
+/** Switch "them" to cloud text between lines only, when nothing is shown mid-line. */
+function maybeAdoptCloud(l: Live) {
+  if (!l.cloud?.up || l.themSource === 'cloud' || l.partial.them?.text) return
+  l.cloud.adopt()
+  l.themSource = 'cloud'
+  l.localThem = null
+  log('stt_switch', { sessionId: l.sessionId, sttEngine: 'speechmatics', keySlot: l.cloud.slot })
+  publish(l.worker)
+}
+
+function fallBackToLocal(l: Live) {
+  l.fallbackTimer = null
+  if (live !== l || l.themSource !== 'cloud' || l.cloud?.up) return
+  l.themSource = 'local'
+  endPartial(l, 'them')
+  emit('transcript:partial', { sessionId: l.sessionId, speaker: 'them', text: '', utteranceId: l.cloudUtt, rev: ++l.cloudRev })
+  // The local engine has been decoding all along: its current words show at once.
+  const p = l.localThem
+  l.localThem = null
+  if (p) onPartial(l, 'them', p.utteranceId, p.rev, p.text)
+  log('stt_switch', { sessionId: l.sessionId, sttEngine: 'local', outcome: 'cloud_down' })
+  publish(l.worker)
+}
+
+async function startCloud(l: Live) {
+  const lane = await createCloudLane(l.sessionId, {
+    partial: (text) => {
+      if (live !== l || l.themSource !== 'cloud') return
+      onPartial(l, 'them', l.cloudUtt, ++l.cloudRev, text)
+    },
+    final: (text, startSample, endSample) => {
+      if (live !== l || l.themSource !== 'cloud') return
+      endPartial(l, 'them')
+      onFinal(l, 'them', text, Math.round((endSample - startSample) / 16))
+      log('stt_final', { sessionId: l.sessionId, sttEngine: 'speechmatics', speaker: 'them', endpoint: 'cloud_eou', sttMs: l.lastVoiceAt ? Math.round(performance.now() - l.lastVoiceAt) : undefined, keySlot: l.cloud?.slot })
+      emit('transcript:partial', { sessionId: l.sessionId, speaker: 'them', text: '', utteranceId: l.cloudUtt, rev: ++l.cloudRev })
+      l.cloudUtt++
+      l.cloudRev = 0
+    },
+    state: (up) => {
+      if (live !== l) return
+      if (up) {
+        if (l.fallbackTimer) clearTimeout(l.fallbackTimer)
+        l.fallbackTimer = null
+        maybeAdoptCloud(l)
+      } else if (l.themSource === 'cloud' && !l.fallbackTimer) {
+        l.fallbackTimer = setTimeout(() => fallBackToLocal(l), CLOUD_FALLBACK_MS)
+      }
+      publish(l.worker)
+    },
+    stats: (st) => log('stt_timing', { sessionId: l.sessionId, sttEngine: 'speechmatics', speaker: 'them', ...st }),
+  }).catch((e) => {
+    log('stt_connect', { sessionId: l.sessionId, outcome: 'setup_failed', errorName: (e as Error).name })
+    return null
+  })
+  if (!lane) return
+  if (live !== l || l.stopping) return void lane.stop()
+  l.cloud = lane
+  publish(l.worker)
 }
 
 /** Start (or restart) transcription for a live session; resolves when the model is loaded. */
@@ -397,6 +501,13 @@ export async function startLive(sessionId: string) {
     onFlushed: null,
     stopping: false,
     detector: new TurnDetector(sessionId, policy, (c) => candidateHook?.(c)),
+    cloud: null,
+    themSource: 'local',
+    localThem: null,
+    cloudUtt: CLOUD_UTTERANCE_BASE,
+    cloudRev: 0,
+    fallbackTimer: null,
+    lastVoiceAt: 0,
   }
   live = l
   attach(l, w)
@@ -407,6 +518,9 @@ export async function startLive(sessionId: string) {
     await stopLive(sessionId)
     throw e
   }
+  // Cloud speech connects in the background: the call starts on local text and switches
+  // at the first quiet moment once a session is up.
+  void startCloud(l)
 }
 
 /** Stop transcription: finalise in-flight words, write pending segments, end the worker. */
@@ -414,6 +528,9 @@ export async function stopLive(sessionId: string) {
   const l = live
   if (!l || l.sessionId !== sessionId) return
   l.stopping = true
+  if (l.fallbackTimer) clearTimeout(l.fallbackTimer)
+  // The last cloud finals arrive during stop() and are committed like any other line.
+  await l.cloud?.stop()
   if (l.worker && l.worker.state === 'listening') {
     await new Promise<void>((resolve) => {
       const t = setTimeout(resolve, 1500)
@@ -460,8 +577,12 @@ export function feedAudio(speaker: unknown, pcm: unknown) {
   if (!bytes || bytes.byteLength === 0 || bytes.byteLength > MAX_FRAME_BYTES || bytes.byteLength % 2) return
   if (speaker === 'them') {
     const t = performance.now()
-    if (frameRms(bytes) > VOICE_RMS) voiceUntil = t + VOICE_HANGOVER_MS
+    if (frameRms(bytes) > VOICE_RMS) {
+      voiceUntil = t + VOICE_HANGOVER_MS
+      l.lastVoiceAt = t
+    }
     l.detector.onThemVoice(t < voiceUntil)
+    l.cloud?.push(new Int16Array(bytes.slice().buffer), t)
   }
   l.worker.proc.postMessage({ type: 'audio', speaker, pcm: bytes, at: Date.now() })
 }

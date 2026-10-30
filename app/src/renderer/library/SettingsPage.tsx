@@ -15,6 +15,7 @@ import { Select } from '@renderer/components/ui/select'
 import { dateTime, errorText, keyGlyphs } from '@renderer/lib/format'
 import { usePrivacy, useQuery, useSettings } from '@renderer/lib/hooks'
 import { PageHeader } from './LibraryApp'
+import { CloudSpeech } from './CloudSpeech'
 import { SpeechModels } from './SpeechModels'
 
 export function SettingsPage() {
@@ -52,6 +53,10 @@ export function SettingsPage() {
 
         <Section title="Speech models" description="Transcription runs on this PC. Install a model once, here; downloads never start during a call.">
           <SpeechModels />
+        </Section>
+
+        <Section title="Cloud speech (Speechmatics)" description="Optional. Faster, punctuated text of the other side, with names and tech terms from your resume spelled right. Uses your own Speechmatics keys; local speech stays ready as the fallback.">
+          {s ? <CloudSpeech settings={s} update={update} /> : <SkeletonLines lines={2} />}
         </Section>
 
         <Section title="New session defaults">
@@ -122,18 +127,13 @@ export function SettingsPage() {
                   />
                 </div>
               </Row>
-              <Row label="Speech to text" hint="Local runs offline on this PC (English), with the Kroko ASR community model (CC-BY-SA, kroko.ai) on sherpa-onnx. Deepgram would add more languages; it isn't built yet.">
+              <Row label="Speech to text" hint="Local runs offline on this PC (English), with the Kroko ASR community model (CC-BY-SA, kroko.ai) on sherpa-onnx. It's always on: for your microphone, and as the fallback when cloud speech is on.">
                 <div className="w-56">
                   <Select
                     ariaLabel="Speech to text"
                     value={s.sttProvider}
                     onChange={(v) => void update({ sttProvider: v as Settings['sttProvider'] })}
-                    options={[
-                      { value: 'local', label: 'Local (offline)' },
-                      isMock
-                        ? { value: 'deepgram', label: 'Deepgram', disabled: !keys.data?.some((k) => k.provider === 'deepgram'), hint: keys.data?.some((k) => k.provider === 'deepgram') ? undefined : 'Needs key' }
-                        : { value: 'deepgram', label: 'Deepgram', disabled: true, hint: 'Not built yet' },
-                    ]}
+                    options={[{ value: 'local', label: 'Local (offline)' }]}
                   />
                 </div>
               </Row>

@@ -11,7 +11,7 @@ const files = process.argv[2] ? [process.argv[2]] : [day(new Date(Date.now() - 8
 const rows = files.flatMap((f) => readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean))
 
 // Only the most recent session unless SESSION=<id> is given.
-const sessions = [...new Set(rows.filter((r) => r.sessionId && r.event === 'answer_timing').map((r) => r.sessionId))]
+const sessions = [...new Set(rows.filter((r) => r.sessionId && (r.event === 'answer_timing' || r.event === 'stt_final')).map((r) => r.sessionId))]
 const sid = process.env.SESSION ?? sessions.at(-1)
 const mine = rows.filter((r) => !sid || r.sessionId === sid)
 
@@ -24,11 +24,34 @@ const stat = (xs) => {
 const of = (event, field, filter = () => true) => mine.filter((r) => r.event === event && filter(r)).map((r) => r[field])
 
 console.log(`Session ${sid ?? '(all)'} from ${files.join(', ')}\n`)
-console.log('Speech (them lane)')
-console.log(`  words spoken -> on screen ms   ${stat(of('stt_timing', 'partialLagMs', (r) => r.speaker === 'them'))}`)
-console.log(`  text update interval ms        ${stat(of('stt_timing', 'partialEveryMs', (r) => r.speaker === 'them'))}`)
-console.log(`  speech end -> final ms         ${stat(of('stt_final', 'sttMs', (r) => r.speaker === 'them'))}`)
-console.log(`  worker backlog ms (max/5 s)    ${stat(of('stt_timing', 'backlogMs'))}`)
+// Revision 7: rows per engine. Logs from before revision 7 have no sttEngine: they're local.
+// Local finals logged while cloud text was shown are the standby's, kept for comparison.
+const engine = (r) => r.sttEngine ?? 'local'
+for (const eng of ['speechmatics', 'local']) {
+  const mineEng = (r) => r.speaker === 'them' && engine(r) === eng
+  if (!mine.some((r) => (r.event === 'stt_final' || r.event === 'stt_timing') && mineEng(r))) continue
+  console.log(`Speech (them lane, ${eng === 'speechmatics' ? 'cloud: Speechmatics' : 'local'})`)
+  console.log(`  words spoken -> on screen ms   ${stat(of('stt_timing', 'partialLagMs', mineEng))}`)
+  console.log(`  text update interval ms        ${stat(of('stt_timing', 'partialEveryMs', mineEng))}`)
+  console.log(`  speech end -> final ms         ${stat(of('stt_final', 'sttMs', mineEng))}`)
+  console.log(`  backlog ms (max/5 s)           ${stat(of('stt_timing', 'backlogMs', mineEng))}`)
+  if (eng === 'local') {
+    const standby = of('stt_final', 'sttMs', (r) => mineEng(r) && r.outcome === 'standby').length
+    if (standby) console.log(`  (${standby} of these finals were the hot standby, not shown)`)
+  }
+}
+if (mine.some((r) => ['stt_connect', 'stt_error', 'stt_switch'].includes(r.event))) {
+  console.log('\nCloud speech')
+  console.log(`  connects ok                    ${mine.filter((r) => r.event === 'stt_connect' && r.outcome === 'ok').length}  (key slots: ${[...new Set(mine.filter((r) => r.event === 'stt_connect' && r.outcome === 'ok').map((r) => r.keySlot))].join(', ') || '-'})`)
+  console.log(`  connect -> started ms          ${stat(of('stt_connect', 'latencyMs', (r) => r.outcome === 'ok'))}`)
+  console.log(`  failure -> next session up ms  ${stat(of('stt_connect', 'switchMs'))}`)
+  console.log(`  replayed audio ms              ${stat(of('stt_connect', 'replayMs'))}`)
+  console.log(`  vocabulary items               ${stat(of('stt_connect', 'vocabCount'))}`)
+  const errs = mine.filter((r) => r.event === 'stt_error').map((r) => `${r.errorType ?? r.status ?? '?'}→${r.outcome}`)
+  if (errs.length) console.log(`  errors                         ${errs.join(', ')}`)
+  const sw = mine.filter((r) => r.event === 'stt_switch').map((r) => `${r.sttEngine}${r.outcome ? `(${r.outcome})` : ''}`)
+  if (sw.length) console.log(`  lane switches                  ${sw.join(' → ')}`)
+}
 console.log('\nAnswers')
 for (const trig of ['auto', 'answer', 'chat', 'screenshot']) {
   const t = (f) => of('answer_timing', f, (r) => r.trigger === trig)

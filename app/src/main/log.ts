@@ -62,6 +62,13 @@ const FIELDS = new Set([
   'cachedTokens',
   'reasoningTokens',
   'thinking',
+  // revision 7 S7: cloud speech (engine, key slot, the provider's error enum, sizes and timings)
+  'sttEngine',
+  'keySlot',
+  'errorType',
+  'vocabCount',
+  'replayMs',
+  'switchMs',
 ])
 
 // Identifiers, enum values and model ids only: no spaces, at most 80 characters.

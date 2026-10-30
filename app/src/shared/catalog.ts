@@ -1,4 +1,4 @@
-import type { AnswerPrefs, AnswerRouting, AutoPolicy, Hotkeys, Language, Model, Provider } from './types'
+import type { AnswerPrefs, AnswerRouting, AutoPolicy, CloudStt, Hotkeys, Language, Model, Provider } from './types'
 
 export const APP_NAME = 'Parley' // placeholder until /replica-brand
 
@@ -18,7 +18,6 @@ export const PROVIDERS: Array<{ id: Provider; label: string; purpose: string; re
   { id: 'groq', label: 'Groq', purpose: 'Fast backup model when Gemini is rate limited.', url: 'https://console.groq.com/keys' },
   { id: 'openai', label: 'OpenAI', purpose: 'Optional answer models.', url: 'https://platform.openai.com/api-keys' },
   { id: 'anthropic', label: 'Anthropic', purpose: 'Optional answer models.', url: 'https://console.anthropic.com/settings/keys' },
-  { id: 'deepgram', label: 'Deepgram', purpose: 'Cloud speech-to-text for languages other than English.', url: 'https://console.deepgram.com/' },
   { id: 'logodev', label: 'logo.dev', purpose: 'Company logos in the company field.', url: 'https://www.logo.dev/' },
 ]
 
@@ -79,6 +78,8 @@ export const DEFAULT_AUTO_POLICY: AutoPolicy = {
 }
 
 /** Revision 4 A4.3 defaults (also the migration 0003 column default). Fallback off. */
+export const DEFAULT_CLOUD_STT: CloudStt = { enabled: false, consentedAt: null, maxDelayS: 1.0, eouSilenceS: 0.5, vocab: true, minLeftMin: 60 }
+
 export const DEFAULT_ANSWER_ROUTING: AnswerRouting = {
   fallbackModel: null,
   fallbackAfterMs: 6000,

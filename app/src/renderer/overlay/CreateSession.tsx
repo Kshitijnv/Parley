@@ -187,7 +187,7 @@ export function CreateSession({ draftId, initialStep, initialType }: { draftId: 
     value: l.code,
     label: l.label,
     // Hindi has no verified model yet (architecture.md §10): say so, not "Needs Deepgram".
-    hint: l.stt.includes(settings.data?.sttProvider ?? 'local') ? undefined : l.code.startsWith('hi') ? 'Not verified yet' : 'Needs Deepgram',
+    hint: l.stt.includes(settings.data?.sttProvider ?? 'local') ? undefined : l.code.startsWith('hi') ? 'Not verified yet' : 'Not available yet',
     disabled: !l.stt.includes(settings.data?.sttProvider ?? 'local'),
   }))
   const modelOptions = (models.data ?? []).map((m) => ({ value: m.id, label: m.label, hint: m.speed }))

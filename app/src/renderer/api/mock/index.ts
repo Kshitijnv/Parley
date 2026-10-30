@@ -3,7 +3,7 @@
 // localStorage + IndexedDB, a scripted STT stream and a canned answer engine.
 import { ZodError } from 'zod'
 import type { Api, ApiEventName, ApiEvents } from '@shared/api'
-import { DEFAULT_ANSWER_ROUTING, DEFAULT_AUTO_POLICY, MODEL_CATALOG, LANGUAGES, providerOf, modelLabel } from '@shared/catalog'
+import { DEFAULT_ANSWER_ROUTING, DEFAULT_AUTO_POLICY, DEFAULT_CLOUD_STT, MODEL_CATALOG, LANGUAGES, providerOf, modelLabel } from '@shared/catalog'
 import { LIMITS, schemas, type Channel } from '@shared/ipc'
 import type {
   Answer,
@@ -17,6 +17,7 @@ import type {
   Segment,
   Session,
   SessionCard,
+  SpeechKey,
   TimelineItem,
 } from '@shared/types'
 import { answerFor, chunks, convertedResumeMd, importJob, notesFor, previewFor, reviewAnswer, searchCompanies, type Ctx } from './ai'
@@ -362,11 +363,13 @@ const picked = (accept: string) => async () => {
 
 // ---------- the Api ----------
 
+let speechKeys: SpeechKey[] = []
+
 export const api: Api = {
   settings: {
     async get() {
       const s = load().settings
-      return { ...s, autoPolicy: { ...DEFAULT_AUTO_POLICY, ...(s.autoPolicy ?? {}) }, answerRouting: { ...DEFAULT_ANSWER_ROUTING, ...(s.answerRouting ?? {}) } }
+      return { ...s, autoPolicy: { ...DEFAULT_AUTO_POLICY, ...(s.autoPolicy ?? {}) }, answerRouting: { ...DEFAULT_ANSWER_ROUTING, ...(s.answerRouting ?? {}) }, cloudStt: { ...DEFAULT_CLOUD_STT, ...(s.cloudStt ?? {}) } }
     },
     async update(patch) {
       const p = validate('settings:update', patch)
@@ -374,7 +377,10 @@ export const api: Api = {
         const autoPolicy = { ...DEFAULT_AUTO_POLICY, ...(db.settings.autoPolicy ?? {}), ...(p.autoPolicy ?? {}) }
         const cur = { ...DEFAULT_ANSWER_ROUTING, ...(db.settings.answerRouting ?? {}) }
         const answerRouting = { ...cur, ...(p.answerRouting ?? {}), switchOn: { ...cur.switchOn, ...(p.answerRouting?.switchOn ?? {}) } }
-        db.settings = { ...db.settings, ...p, autoPolicy, answerRouting, updatedAt: now() }
+        const c = { ...DEFAULT_CLOUD_STT, ...(db.settings.cloudStt ?? {}), ...(p.cloudStt ?? {}) }
+        if (p.cloudStt?.consentedAt) c.consentedAt = now()
+        if (c.enabled && c.consentedAt === null) throw new ApiError('Accept the cloud speech notice first.', 'validation', 'cloudStt')
+        db.settings = { ...db.settings, ...p, autoPolicy, answerRouting, cloudStt: c, updatedAt: now() }
         return db.settings
       })
       if (p.privateMode !== undefined) void windowApi.setPrivate(p.privateMode)
@@ -417,6 +423,54 @@ export const api: Api = {
         db.keys = db.keys.filter((k) => k.provider !== provider)
       })
       changed('keys')
+      return { ok: true }
+    },
+  },
+
+  // Cloud speech keys live in memory only in the browser preview: nothing to protect, nothing to call.
+  speechKeys: {
+    async list() {
+      return speechKeys
+    },
+    async add(input) {
+      const { key, label, budgetHours } = validate('speechKeys:add', input)
+      if (speechKeys.length >= 5) throw new ApiError('Up to 5 keys. Remove one first.', 'validation', 'key')
+      await sleep(600)
+      const bad = hasScenario('bad_key')
+      const k: SpeechKey = { id: uuid(), label, last4: key.slice(-4), position: speechKeys.length + 1, state: bad ? 'auth_failed' : 'ok', stateUntil: null, lastErrorType: null, usedMs: 0, usedTotalMs: 0, budgetMs: budgetHours === null ? null : Math.round(budgetHours * 3_600_000), verifiedAt: bad ? null : now() }
+      speechKeys = [...speechKeys, k]
+      changed('speechKeys')
+      return { key: k, test: bad ? { ok: false, error: 'Speechmatics rejected this key (401). Check it was copied in full.' } : { ok: true } }
+    },
+    async update(input) {
+      const { id, label, budgetHours } = validate('speechKeys:update', input)
+      speechKeys = speechKeys.map((k) => (k.id === id ? { ...k, label: label ?? k.label, budgetMs: budgetHours === undefined ? k.budgetMs : budgetHours === null ? null : Math.round(budgetHours * 3_600_000) } : k))
+      changed('speechKeys')
+      return speechKeys.find((k) => k.id === id)!
+    },
+    async test(input) {
+      const { id } = validate('speechKeys:test', input)
+      await sleep(600)
+      speechKeys = speechKeys.map((k) => (k.id === id ? { ...k, state: 'ok', stateUntil: null, verifiedAt: now() } : k))
+      changed('speechKeys')
+      return { ok: true }
+    },
+    async move(input) {
+      const { id, by } = validate('speechKeys:move', input)
+      const i = speechKeys.findIndex((k) => k.id === id)
+      const j = i + by
+      if (i >= 0 && j >= 0 && j < speechKeys.length) {
+        const next = [...speechKeys]
+        ;[next[i], next[j]] = [next[j]!, next[i]!]
+        speechKeys = next.map((k, n) => ({ ...k, position: n + 1 }))
+      }
+      changed('speechKeys')
+      return speechKeys
+    },
+    async remove(input) {
+      const { id } = validate('speechKeys:remove', input)
+      speechKeys = speechKeys.filter((k) => k.id !== id).map((k, n) => ({ ...k, position: n + 1 }))
+      changed('speechKeys')
       return { ok: true }
     },
   },

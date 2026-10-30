@@ -75,6 +75,7 @@ const win = (channel: string) => (input?: unknown) => ipcRenderer.invoke(channel
 const api: Api = {
   settings: { get: c('settings:get'), update: c('settings:update') },
   keys: { status: c('keys:status'), set: c('keys:set'), test: c('keys:test'), delete: c('keys:delete') },
+  speechKeys: { list: c('speechKeys:list'), add: c('speechKeys:add'), update: c('speechKeys:update'), test: c('speechKeys:test'), move: c('speechKeys:move'), remove: c('speechKeys:remove') },
   models: { list: c('models:list'), catalog: () => MODEL_CATALOG, languages: () => LANGUAGES },
   stt: {
     modelStatus: c('stt:modelStatus'),

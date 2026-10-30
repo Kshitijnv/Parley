@@ -1,5 +1,5 @@
 // Seed data for the mock layer. Every person and company here is fictional.
-import { DEFAULT_ANSWER_ROUTING, DEFAULT_AUTO_POLICY, DEFAULT_HOTKEYS, DEFAULT_PREFS } from '@shared/catalog'
+import { DEFAULT_ANSWER_ROUTING, DEFAULT_AUTO_POLICY, DEFAULT_CLOUD_STT, DEFAULT_HOTKEYS, DEFAULT_PREFS } from '@shared/catalog'
 import type { Answer, Notes, ParsedResume, Segment, Settings } from '@shared/types'
 import type { Db, DocumentStored, ResumeRowStored, SessionRow } from './store'
 
@@ -94,6 +94,7 @@ function settings(t: number): Settings {
   return {
     autoPolicy: { ...DEFAULT_AUTO_POLICY },
     answerRouting: { ...DEFAULT_ANSWER_ROUTING, switchOn: { ...DEFAULT_ANSWER_ROUTING.switchOn } },
+    cloudStt: { ...DEFAULT_CLOUD_STT },
     theme: 'system',
     zoom: 1,
     privateMode: true,
