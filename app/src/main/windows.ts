@@ -1,7 +1,7 @@
 import { BrowserWindow, screen, shell } from 'electron'
 import { join } from 'node:path'
 import type { Bounds, WindowState } from '@shared/types'
-import { applyProtection, capability, reveal, setPrivateFlag } from './privacy'
+import { applyProtection, capability, isPrivate, reveal, setPrivateFlag } from './privacy'
 
 const preload = join(import.meta.dirname, '../preload/index.cjs')
 
@@ -55,7 +55,10 @@ export function createOverlay(): BrowserWindow {
     minWidth: 380,
     minHeight: 120,
     alwaysOnTop: true,
-    skipTaskbar: false,
+    // revision 8: hide the overlay's taskbar button while Private is on, so a
+    // full-screen share shows no "Parley" entry. Reached via the bubble/hotkeys, not
+    // Alt+Tab, so dropping the Alt+Tab entry is intended. setPrivate keeps it in sync.
+    skipTaskbar: isPrivate(),
     hasShadow: false,
     show: false,
     title: 'Parley',
@@ -194,6 +197,10 @@ export function setPrivate(on: boolean) {
   setPrivateFlag(on)
   // Hidden windows take the value now too; their next reveal resets it if on.
   for (const w of [wins.overlay, wins.bubble, wins.snap]) if (w && !w.isDestroyed()) applyProtection(w)
+  // Overlay only (revision 8): the bubble and snap always skip the taskbar. Kept out
+  // of applyProtection so it never touches the bubble/snap. Removing the taskbar
+  // button doesn't affect reveal()/focus, which show and focus programmatically.
+  if (wins.overlay && !wins.overlay.isDestroyed()) wins.overlay.setSkipTaskbar(on)
   broadcastState()
 }
 

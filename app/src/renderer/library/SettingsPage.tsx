@@ -149,7 +149,7 @@ export function SettingsPage() {
         <Section title="Overlay">
           {s && (
             <div className="space-y-3">
-              <Row label="Private mode" hint={privacy?.reason ?? 'Keeps the overlay out of screen shares and recordings (Windows 10 2004 or later). A camera can still see it.'}>
+              <Row label="Private mode" hint={privacy?.reason ?? 'Keeps the overlay out of screen shares and recordings, and hides its taskbar button so it stays off a shared taskbar (Windows 10 2004 or later). A camera can still see it.'}>
                 <Switch label="Private mode" checked={s.privateMode} disabled={privacy?.mode === 'unsupported'} onCheckedChange={(v) => void update({ privateMode: v })} />
               </Row>
               <Row label="Live layer opacity" hint="Lower is more see-through. Below 78% text gets hard to read over bright pages, so that's the minimum.">

@@ -33,6 +33,11 @@ export function setPrivateFlag(on: boolean) {
   privateOn = on
 }
 
+/** The current Private setting, for the overlay's initial taskbar flag (revision 8). */
+export function isPrivate() {
+  return privateOn
+}
+
 interface Track {
   holds: Set<string>
   seq: number
