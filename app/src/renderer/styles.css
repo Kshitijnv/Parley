@@ -60,6 +60,21 @@
   -webkit-app-region: no-drag;
 }
 
+/* Static cursor on the overlay layer — screen-share cursor-tell fix (revision 8,
+   feature #39). The OS draws the mouse pointer above the composited screen, so a share
+   captures the pointer even though content protection hides the overlay's pixels. A
+   pointer that changes shape over the otherwise-hidden overlay (I-beam over inputs, hand
+   over buttons, nwse-resize over the answer-panel handle, not-allowed over disabled
+   buttons) would give it away, so force a plain arrow on every overlay-layer element
+   (overlay, bubble, snap). The library window (body.solid-page) keeps native cursors.
+   Only the hover pointer shape changes: the input caret, text selection and :focus-visible
+   outlines are untouched. Unlayered + !important so it wins over the @layer base cursor
+   rules above and any Tailwind cursor-* utility. */
+body:not(.solid-page),
+body:not(.solid-page) * {
+  cursor: default !important;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
