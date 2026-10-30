@@ -51,7 +51,15 @@ export function createOverlay(): BrowserWindow {
     y: wa.y + 60,
     frame: false,
     transparent: true,
-    resizable: true,
+    // revision 8 (P6-15): not OS-resizable. A frameless resizable window shows native
+    // resize cursors in an OS border at its edges, which CSS can't hide, giving the
+    // hidden overlay away in a screen share. Nothing used edge-resize: the answer panel
+    // resizes a DOM element, and the window is sized only programmatically by fit() /
+    // setBounds() / moveBy(). Probed on Electron 45 / Windows: resizable:false does NOT
+    // clamp programmatic setBounds (grow and shrink both apply), so no setResizable wrap
+    // is needed and fit() auto-size-to-content is unaffected. minWidth/minHeight stay as
+    // the programmatic floor.
+    resizable: false,
     minWidth: 380,
     minHeight: 120,
     alwaysOnTop: true,
